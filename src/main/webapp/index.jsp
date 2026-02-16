@@ -11,6 +11,8 @@
 </head>
 
 <body>
+# This is a fake key for testing Gitleaks
+STRIPE_KEY = "sk_live_51Mz9V2L4jKxP0p1Z2X3Y4Z5W6V7U8"
     <nav class="navbar navbar-expand-lg glass-navbar">
         <div class="container">
             <a class="navbar-brand fw-bold text-white fs-3" href="#">Library</a>
