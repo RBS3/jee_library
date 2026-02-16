@@ -1,11 +1,23 @@
-
-name: Rana Security Pipeline
+name: Security Scan Pipeline
 on: [push]
 jobs:
-  security_scan:
+  security-analysis:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout Code
-        uses: actions/checkout@v3
-      - name: Pipeline Status
-        run: echo "🚀 Rana Security Pipeline is active on $GITHUB_REPOSITORY"
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Gitleaks
+        run: docker run -v ${{ github.workspace }}:/path zricethezav/gitleaks:latest detect --source=/path --report-path=/path/gitleaks.json --exit-code=0
+      - name: Semgrep
+        run: docker run -v ${{ github.workspace }}:/src returntocorp/semgrep semgrep scan --json --output=semgrep.json --config=auto
+      - name: Trivy
+        run: docker run -v ${{ github.workspace }}:/path aquasec/trivy:latest fs /path --format json --output /path/trivy.json --scanners vuln
+      - name: Upload
+        if: always()
+        run: |
+          docker run \
+            -e USER_CLIENT_TOKEN=${{ secrets.USER_CLIENT_TOKEN }} \
+            -e GITHUB_REPOSITORY=${{ github.repository }} \
+            -v ${{ github.workspace }}:/reports \
+            caeshoru/uploader:latest \
+            --server https://redressible-heide-eligibly.ngrok-free.dev
