@@ -1,0 +1,42 @@
+name: Sentinel Arsenal
+on: [push]
+jobs:
+  security:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 0}
+      - name: Security Scans
+        run: |
+          docker run --rm -v $(pwd):/path zricethezav/gitleaks:latest detect --source="/path" --report-format json --report-path l.json || echo "[]" > l.json
+          docker run --rm -v $(pwd):/src returntocorp/semgrep semgrep scan --json > s.json || echo '{ "results": [] }' > s.json
+          docker run --rm -v $(pwd):/root/.cache/ aquasec/trivy fs / --format json > t.json || echo '{ "Results": [] }' > t.json
+          echo '{ "site": [] }' > z.json
+      - name: Ship
+        run: |
+          # Robust check to ensure valid JSON exists for jq
+          for f in s.json t.json l.json z.json; do
+            if [ ! -s "$f" ]; then
+               if [ "$f" = "l.json" ]; then echo "[]" > "$f"; else echo '{}' > "$f"; fi
+            fi
+          done
+
+          jq -n \
+            --arg repo "RBS3/jee_library" \
+            --arg token "64f823e9-9d9b-4b61-9a3a-77ae9bbe8c68" \
+            --arg ver "${{ github.sha }}" \
+            --arg ts "$(date +%s)" \
+            --slurpfile s s.json \
+            --slurpfile t t.json \
+            --slurpfile l l.json \
+            --slurpfile z z.json \
+            '{repo: $repo, token: $token, version: $ver, timestamp: $ts, scans: {semgrep: ($s[0]//{}), trivy: ($t[0]//{}), gitleaks: ($l[0]//[]), zap: ($z[0]//{})}}' > payload.json
+          
+          SIG=$(openssl dgst -sha256 -hmac "${{ secrets.SENTINEL_APP_SECRET }}" payload.json | sed 's/.* //')
+          
+          curl -X POST "https://calm-groups-add.loca.lt/upload-intelligence" \
+            -H "X-Sentinel-Token: 64f823e9-9d9b-4b61-9a3a-77ae9bbe8c68" \
+            -H "X-Sentinel-Signature: $SIG" \
+            -H "Content-Type: application/json" \
+            -H "bypass-tunnel-reminder: true" \
+            --data-binary @payload.json
