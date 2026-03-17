@@ -1,0 +1,65 @@
+version: '3.8'
+services:
+  sentinel-rasp:
+    image: caeshoru/sentinel-rasp:latest
+    ports: ["8080:8081"]
+    environment:
+      - SENTINEL_SECRET=${{ secrets.SENTINEL_APP_SECRET }}
+      - SENTINEL_TOKEN=${{ secrets.SENTINEL_APP_TOKEN }}
+      - SENTINEL_URL=https://calm-groups-add.loca.lt/upload-intelligence
+      - INTERNAL_APP_URL=http://app:8080
+      - REPO_NAME=RBS3/jee_library
+      - REPO_VERSION=${{ github.sha }}
+
+  node-exporter:
+    image: prom/node-exporter:latest
+    restart: unless-stopped
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    command:
+      - '--path.procfs=/host/proc'
+      - '--path.rootfs=/rootfs'
+      - '--path.sysfs=/host/sys'
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:latest
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        echo "
+        receivers:
+          otlp:
+            protocols:
+              http:
+                endpoint: 0.0.0.0:4318
+          hostmetrics:
+            scrapers:
+              cpu:
+              memory:
+              network:
+              disk:
+        processors:
+          resource:
+            attributes:
+              - key: sentinel.token
+                value: ${{ secrets.SENTINEL_APP_TOKEN }}
+                action: insert
+        exporters:
+          otlphttp:
+            endpoint: https://calm-groups-add.loca.lt/v1/logs
+            headers:
+              bypass-tunnel-reminder: 'true'
+        service:
+          pipelines:
+            logs:
+              receivers: [otlp]
+              processors: [resource]
+              exporters: [otlphttp]
+            metrics:
+              receivers: [hostmetrics]
+              exporters: [otlphttp]
+        " > /etc/otel-config.yaml;
+        /otelcol-contrib --config=/etc/otel-config.yaml
